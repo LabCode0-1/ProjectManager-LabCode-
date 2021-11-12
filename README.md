@@ -6,5 +6,5 @@ Members:
 2.Cristian Camilo Parada Cárdenas 
 3.
 4.
-5.
+5.Luis Alfredo Pinzón Quintero
 6.
