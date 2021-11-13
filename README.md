@@ -8,3 +8,4 @@ Members:
 4.Juan Guillermo Serna Agudelo
 5.Luis Alfredo Pinzón Quintero
 6.Raúl Fernando Ruiz Ruiz
+7.lina María Palacio Lemos
