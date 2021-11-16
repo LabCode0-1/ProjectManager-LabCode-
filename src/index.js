@@ -5,7 +5,7 @@ dotenv.config();
 const {DB_URI,DB_NAME}=process.env;
 const bcrypt=require("bcryptjs")
 
-
+//para lanzar el servidor online deben escribir en la terminal npm run dev
 
   // Los resolvers definen la técnica para obtener los tipos definidos en el
 // esquema. Este solucionador recupera misProyectos de la matriz "misProyectos" definida en la linea 65 .
