@@ -16,6 +16,7 @@ const getUserFromToken = async (token, db) => {
   if (!tokenData?.id) {
     return null;
   }
+  
   return await db.collection('user').findOne({ _id: ObjectId(tokenData.id) });  //busca el usuario con el _id igual al que reresa el ObjectId
 }
 
@@ -26,17 +27,43 @@ const resolvers = {
       //misProyectos: () => []
   //},
   Query: {
+    getUsers: async(root,_,{db,user}) =>{
+      if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
+      const rol = user.rol 
+      if(rol == "Administrador"){
+      const userList =  await db.collection('user').find({}).toArray();
+      return userList}else{throw Error("No tiene permisos necesarios para acceder acá")}
+    },
+
+    getMyUser:async(root,_,{db,user})=>{
+      return await db.collection('user').findOne({_id:user._id})
+    },
+
     misProyectos: async (_, __, { db, user }) => {  //Ver lista de tareas
       if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
+      const rol= user.rol
+
       return await db.collection('Project')   
-                                .find({ userIds: user._id })
+                                .find({})
                                 .toArray();
+      
     },
 
     getProyecto: async(_, { id }, { db, user }) => {  
       if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
       return await db.collection('Project').findOne({ _id: ObjectId(id) });
-    }
+    },
+
+    //FALTA QUE TRAIGA LOS CAMPOS DE NOMBRE Y ID DEL ESTUDIANTE !!!!
+    getEstudiantes: async(_,id,{db,user})=>{
+     if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
+     const rol = user.rol
+     if (rol=="Lider"){
+       return user, await db.collection("aspirantes").findOne({ proyectosId: ObjectId(id) });
+     }else{throw Error("sin permisos")}
+
+    },
+
   },
 
 //Mutationes
@@ -45,7 +72,8 @@ Mutation: {
         const hashedPassword=bcrypt.hashSync(input.password) 
         const newUser={ 
             ...input,
-            password:hashedPassword,
+            estado:"inactivo",
+            password:hashedPassword
         }
     const result= await db.collection("user").insertOne(newUser);  
     return{  
@@ -55,7 +83,7 @@ Mutation: {
 },
 
 signIn: async(root,{input},{db})=>{    //Iniciar Sesión
-    const user = await db.collection('user').findOne({ email: input.email });
+    const user = await db.collection('user').findOne({ mail: input.mail });
     const isPasswordCorrect = user && bcrypt.compareSync(input.password, user.password); 
     if (!user || !isPasswordCorrect) {  
       throw new Error('Credenciales erroneas :('); 
@@ -66,8 +94,32 @@ signIn: async(root,{input},{db})=>{    //Iniciar Sesión
     }
   },
 
+  editUsuario: async(_,datos,{user,db})=>{
+    if(!user){console.log("No esta autenticado, por favor inicie sesión.")}
+   const dat={
+     ...datos.estado
+
+   }
+    const result= await db.collection("user").updateOne({_id:user._id},{$set:dat});
+    return await db.collection("user").findOne({_id:user._id});
+  },
+
+  editUsuarioAdmin: async(_,{id,estado},{user,db})=>{
+    if(!user){console.log("No esta autenticado, por favor inicie sesión.")}
+    const rol = user.rol;
+
+   if(rol == "Administrador"){
+    const result= await db.collection("user").updateOne({_id:ObjectId(id)},{$set:{estado}});
+    return await db.collection("user").findOne({_id:ObjectId(id)})
+  }
+    else{throw Error("no tiene permisos para modificar esto ")}
+  },
+
+
+
 createProyectos: async(root,{nombre,objetivosGenerales,objetivosEspecificos,presupuesto,fechaFinal},{db, user})=>{    
     if(!user){console.log("No esta autenticado, por favor inicie sesión.")} //falta poner un segundo condicional para definir que roles pueden cambiar informacion y crearla
+    const rol = user.rol
     const newProyecto={  
         nombre,
         objetivosGenerales,
@@ -75,39 +127,57 @@ createProyectos: async(root,{nombre,objetivosGenerales,objetivosEspecificos,pres
         presupuesto,
         fechaInicio: new Date().toISOString(),
         fechaFinal,
-        progress:1234,
+        progress:0,
         userIds:[user._id], 
         userNames: [user.nombre],
-        estado:true,
-        fase:"en desarrollo",
-        Avances: "a veces",//por ahora el campo avances y aspirantes son tomados como strings. 
-        Aspirantes:"a programador",
+        estado:"pendiente",
+        fase:"en espera",
+        Avances:[],//por ahora el campo avances y aspirantes son tomados como strings. 
+        Aspirantes:[]
     }
-    console.log("Proyecto Creado Correctamente") 
+    if(rol=="Lider"||"Administrador"){
     const result= await db.collection("Project").insertOne(newProyecto); 
+    console.log("Proyecto Creado Correctamente") 
     return newProyecto 
+    } else{throw new Error("sin permisos necesarios")}
 },
 
-updateProyectos : async(_, {id, estado }, {db, user}) =>{  
+updateProyectos : async(_, data, {db, user}) =>{  
     if(!user){console.log("No esta autenticado, por favor inicie sesión.")}  
     const result= await db.collection("Project") 
-                        .updateOne({_id:ObjectId(id) 
+                        .updateOne({_id:ObjectId(data.id) 
                         },{
-                            
-                            $set:{estado}
-                
+                            $set:data
                         }
     )//IMPORTANTE: Si nuestro proyecto necesita que mas campos sean editables, se deben establecer como argumentos y brindarselos a la funcion desde el front(apollo)
 //Si un campo no es editado, es decir, queda en blanco en el front, se puede establecer un if que evalue que si el campo esta en blanco entonces no se ejecuta el update
-console.log("Tarea Actualizada Correctamente")
+console.log("Proyecto Actualizado Correctamente")
 return await db.collection("Project").findOne({_id:ObjectId(id)}); 
 },
+
+//ACÁ NO HE PODIDO HACER PARA EDITAR SOLO ESTADO O SOLO FASE, ASÍ QUE OBLIGATORIAMENTE HAY QUE PROVEER AMBAS
+updateProyectosAdmin : async(_, data, {db, user}) =>{  
+  if(!user){console.log("No esta autenticado, por favor inicie sesión.")}
+  const rol= user.rol  
+ 
+  if(rol=="Administrador"){
+  const result= await db.collection("Project").updateOne({_id:ObjectId(data.id)},{$set:data})
+console.log("Proyecto Actualizado Correctamente")
+return await db.collection("Project").findOne({_id:ObjectId(data.id)});}
+else{throw Error("Modificaciones no son posibles desde el rol")}
+},
+
+
+
+
+
+
 
 deleteProyectos : async(_, {id}, {db, user}) =>{   
     if(!user){console.log("No esta autenticado, por favor inicie sesión.")}  
 
     await db.collection("Project").deleteOne({_id:ObjectId(id)}); 
-    console.log("Tarea Eliminada Correctamente")
+    console.log("Proyecto Eliminado Correctamente")
     return true; 
 },
 
@@ -139,23 +209,18 @@ deleteProyectos : async(_, {id}, {db, user}) =>{
 },
 */
 
-createAvances: async(root,{nombre, proyectosId}, {db, user})=>{
+createAvances: async(root,{descripcion,proyectosId}, {db, user})=>{
 if(!user){console.log("No esta autenticado, por favor inicie sesión.")} 
 const newAvances ={
-  nombre,
-  objGenerales,
-  fechaAvance,
+  fechaAvance: new Date().toISOString(),
   descripcion,
-  observaciones,
-  proyectosId: ObjectId(proyectosId),
-  estado,
-  
+  observaciones:"null",
 }
-const result= await db.collection("avances").insertOne(newAvances);
+//const result= await db.collection("avances").insertOne(newAvances)
+const results = await db.collection("Project").updateOne({_id:ObjectId(proyectosId)},{$push:{Avances:(newAvances)}})
 return newAvances;
 },
-/*
-updateAvances: async (_, data, {db, user})=>{
+/*updateAvances: async (_, data, {db, user})=>{
   if(!user){console.log("No esta autenticado, por favor inicie sesión.")}  
 
   const result= await db.collection("avances")
@@ -166,33 +231,81 @@ updateAvances: async (_, data, {db, user})=>{
   return await db.collection("Avances").findOne({_id:ObjectId(data.id)});
 },
 */
+AddAspirante: async(root,{proyectosId},{db,user})=>{
+  const nuevoAspirante={
+    userId:user._id,
+    userName:user.nombre,
+    estado: false,
+    fechaIngreso:"indeterminada",
+    fechaEgreso: "indeterminada",
+    proyectosId:ObjectId(proyectosId)
+    
+  }
+  const results = await db.collection("Project").updateOne({_id:ObjectId(proyectosId)},{$push:{Aspirantes:(nuevoAspirante)}})
+  const results2= await db.collection("aspirantes").insertOne(nuevoAspirante);
+  return nuevoAspirante
+
+}
+
+
 
 
 },
 
-//Variables seteadas por defecto 
+//Variables seteadas por defecto
+
+aspirantes:{
+
+  proyecto: async ({proyectosId}, _, {db}) =>(
+    await db.collection("Project").findOne({_id:ObjectId(proyectosId)})
+    ),
+    userId: async ({ userIds }, _, { db }) => Promise.all(  
+      userIds.$map((userId) => (  
+        db.collection('user').findOne({ _id: userId})) 
+      )
+    ),
+  
+  
+
+},
+
+
+
 user:{
 id:(root)=>{
-    return root._id;}
+    return root._id;},
+
 },
 
 
 Proyectos: {
     id: ({ _id, id }) => _id || id, 
-    progress: async ({_id}, _, {db}) =>{
-      const avances= await db.collection("avances").find({proyectosId: ObjectId(_id)}).toArray()
-      const completed= avances.filter(avances =>avances.isCompleted);
-      if (avances.length===0){
-        return 0;
-      }
-      return (completed.length/avances.length)*100
-    },
+    
 
     users: async ({ userIds }, _, { db }) => Promise.all(  
       userIds.map((userId) => (  
         db.collection('user').findOne({ _id: userId})) 
       )
     ),
+
+    
+    Avances: async({ _id},_,{db})=> {
+      const avancee = await db.collection("avances").find({Proyecto:ObjectId(_id)})
+      return avancee
+    },
+  
+    /*
+    Aspirantes: async({_id},_,{db})=>{
+      const aspirantess = await db.collection("aspirantes").findOne({proyecto:ObjectId(_id)})
+      if(!aspirantes){
+        return(null)
+      }return aspirantess
+
+
+    },
+*/    
+    
+  
    
   },
 
@@ -200,9 +313,15 @@ Proyectos: {
 Avances:{
   id:(root)=>{
     return root._id;},
-  Proyecto: async ({proyectosId}, _, {db}) =>(
+
+  proyecto: async ({proyectosId}, _, {db}) =>(
   await db.collection("Project").findOne({_id:ObjectId(proyectosId)})
-  )
+  ),
+  
+  id:(root)=>{
+    return root._id;}
+
+
 },
 
 }
@@ -221,8 +340,7 @@ const start = async () => {
         
         return {
           db,  //base de datos como contexto
-          user,  //usuario autenticado como contexto
-         
+          user  //usuario autenticado como contexto
         }
       },
     });
@@ -238,8 +356,11 @@ start();
   
   const typeDefs = gql`   
   type Query {
-    misProyectos:[Proyectos!]!
-    getProyecto:[Proyectos!]!
+    misProyectos:[Proyectos!]! #historia de usuario 6
+    getProyecto(id:ID!):[Proyectos!]!#historia 13. FALTA AUTENTICACION
+    getUsers:[user!]! #historia de usuario 4
+    getMyUser:user!
+    getEstudiantes(id:ID!):aspirantes
   }
   
   type user{
@@ -248,26 +369,41 @@ start();
       identificacion: String!
       nombre: String!
       password: String!
+      estado:String!
       rol: String!
   } 
     
   type Mutation{
-    signUp(input:SignUpInput):AuthUser!
-    signIn(input:SignInInput):AuthUser!
-    createProyectos(nombre: String!, objetivosGenerales:String!, objetivosEspecificos:String!, presupuesto: String!,fechaFinal: String!):Proyectos!
+    signUp(input:SignUpInput):AuthUser! # historia de usuario 1 
+    signIn(input:SignInInput):AuthUser! # historia de usuario 2 
+    editUsuario(mail:String, identificacion:String, nombre:String, password:String):user #historia de usuario 3 
+    
+    editUsuarioAdmin(id:ID!,estado:String!):user! #historia de usuario 5
+    updateProyectosAdmin(id:ID!, estado:String, fase:String ):Proyectos! ##hISTORIAS DE USUARIOS 7, 8 Y 9.
+
+    
+    #Historia 12 
+    createProyectos(nombre: String!, objetivosGenerales:String!, objetivosEspecificos:String!, presupuesto: String!,fechaFinal: String!):Proyectos! 
+
     updateProyectos(id:ID!, estado:Boolean!):Proyectos!
     deleteProyectos(id:ID!):Boolean!
     #addUserToProyectos(taskListId: ID!, userId: ID!): Proyectos!
-    createAvances(nombre:String!,proyectosID:ID!):Avances!
+    createAvances(descripcion:String!, proyectosId:ID!):Avances!
     #updateAvances():Avances!
 
+    AddAspirante(proyectosId:ID!):aspirantes!
+
   }
+
+  
+  
 
   input SignUpInput{
     mail: String!
     identificacion: String!
     nombre: String!
     password: String!
+    estado:String!
     rol: String!
   }
 
@@ -291,34 +427,35 @@ start();
     fechaFinal: String!
     progress: Float!
     users: [user!]!
-    estado: Boolean!
+    estado: String!
     fase: String!
-    Avances:String!
-    Aspirantes:String!
-}
-
-
+    Avances:[Avances]
+    aspirantes:[aspirantes]
+  }
 
  type Avances{
    id:ID!
-   nombre:String!
-   objGenerales:String!
    fechaAvance:String!
    descripcion: String!
-   observaciones:String!
-   Proyecto:[Proyectos]!
-   estado:Boolean!
+   observaciones:String! #[Observaciones!]!
+   proyecto:[Proyectos!]!
 
  }
 
+ type Observaciones{
+   id:ID!
+   avances:Avances!
+   contenido:String!
+ }
 
-type Aspirante{
-    id: ID!
-    nombreAspirante: String!
-    email: String!
-    estado: Boolean!
-    fechaIngreso: String!
-    FechaEgreso: String!
+
+type aspirantes{
+  userId:[user]
+  userName:[user]
+  estado: String
+  fechaIngreso: String
+  fechaEgreso: String
+  proyecto:Proyectos!
 
 }
   `;
