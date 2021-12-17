@@ -28,11 +28,11 @@ const resolvers = {
   //},
   Query: {
     getUsers: async(root,_,{db,user}) =>{
-      if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
-      const rol = user.rol 
-      if(rol == "Administrador"){
-      const userList =  await db.collection('user').find({}).toArray();
-      return userList}else{throw Error("No tiene permisos necesarios para acceder acá")}
+      //if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
+      //const rol = user.rol 
+      //if(rol == "Administrador"){
+      return await db.collection('user').find({}).toArray();
+      //return userList}else{throw Error("No tiene permisos necesarios para acceder acá")}
     },
 
     getMyUser:async(root,_,{db,user})=>{
@@ -40,8 +40,7 @@ const resolvers = {
     },
 
     misProyectos: async (_, __, { db, user }) => {  //Ver lista de tareas
-      if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
-      const rol= user.rol
+      //if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
 
       return await db.collection('Project')   
                                 .find({})
@@ -49,17 +48,17 @@ const resolvers = {
       
     },
 
-    getProyecto: async(_, { id }, { db, user }) => {  
+    getProyecto: async(_, { Pid }, { db, user }) => {  
       if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
       return await db.collection('Project').findOne({ _id: ObjectId(id) });
     },
 
     //FALTA QUE TRAIGA LOS CAMPOS DE NOMBRE Y ID DEL ESTUDIANTE !!!!
-    getEstudiantes: async(_,id,{db,user})=>{
+    getEstudiantes: async(_,__,{db,user})=>{
      if (!user) { throw new Error('Error de Autenticación, por favor inicie Sesión'); }
      const rol = user.rol
      if (rol=="Lider"){
-       return user, await db.collection("aspirantes").findOne({ proyectosId: ObjectId(id) });
+       return await db.collection("avances").find({});
      }else{throw Error("sin permisos")}
 
     },
@@ -244,7 +243,6 @@ AddAspirante: async(root,{proyectosId},{db,user})=>{
   const results = await db.collection("Project").updateOne({_id:ObjectId(proyectosId)},{$push:{Aspirantes:(nuevoAspirante)}})
   const results2= await db.collection("aspirantes").insertOne(nuevoAspirante);
   return nuevoAspirante
-
 }
 
 
@@ -255,15 +253,20 @@ AddAspirante: async(root,{proyectosId},{db,user})=>{
 //Variables seteadas por defecto
 
 aspirantes:{
+  
+  id:(root)=>{
+    return root._id;},
 
   proyecto: async ({proyectosId}, _, {db}) =>(
     await db.collection("Project").findOne({_id:ObjectId(proyectosId)})
     ),
-    userId: async ({ userIds }, _, { db }) => Promise.all(  
-      userIds.$map((userId) => (  
-        db.collection('user').findOne({ _id: userId})) 
-      )
-    ),
+
+  user:async(_,{id},{db})=>{
+    return await db.collection('aspirantes').find({proyectosId:(ObjectId(id))})
+
+  },
+
+
   
   
 
@@ -290,8 +293,9 @@ Proyectos: {
 
     
     Avances: async({ _id},_,{db})=> {
-      const avancee = await db.collection("avances").find({Proyecto:ObjectId(_id)})
-      return avancee
+      return await db.collection("avances").find({Proyecto:ObjectId(_id)})
+      
+      
     },
   
     /*
@@ -354,13 +358,13 @@ start();
 
 
   
-  const typeDefs = gql`   
-  type Query {
+  const typeDefs = gql `
+    type Query {
     misProyectos:[Proyectos!]! #historia de usuario 6
     getProyecto(id:ID!):[Proyectos!]!#historia 13. FALTA AUTENTICACION
     getUsers:[user!]! #historia de usuario 4
     getMyUser:user!
-    getEstudiantes(id:ID!):aspirantes
+    getEstudiantes:aspirantes
   }
   
   type user{
@@ -450,8 +454,8 @@ start();
 
 
 type aspirantes{
-  userId:[user]
-  userName:[user]
+  id:ID!
+  user:user!
   estado: String
   fechaIngreso: String
   fechaEgreso: String
